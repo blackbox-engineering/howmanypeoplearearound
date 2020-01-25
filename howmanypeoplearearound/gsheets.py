@@ -31,9 +31,3 @@ class GSheet:
 
     def append_row(self, row):
         self.wks.append_row(row)
-
-
-if __name__ == '__main__':
-
-    gsheet = GSheet("Test PeopleCounter", ['h1', 'h2', 'h3'])
-
