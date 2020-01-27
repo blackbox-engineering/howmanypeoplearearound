@@ -20,14 +20,14 @@ class GSheet:
         self.headers = sheet_headers
 
         credentials = ServiceAccountCredentials.from_json_keyfile_name(creds_file, SCOPE)
-        self.gc = gspread.authorize(credentials)
+        self.google_client = gspread.authorize(credentials)
 
-        self.wks = self.gc.open(self.title).sheet1
-        self._check_header()
+        self.google_worksheet = self.google_client.open(self.title).sheet1
+        self.write_header_if_first_row_in_sheet()
 
-    def _check_header(self):
-        if not self.wks.row_values(1):
-            self.wks.append_row(self.headers)
+    def write_header_if_first_row_in_sheet(self):
+        if not self.google_worksheet.row_values(1):
+            self.google_worksheet.append_row(self.headers)
 
     def append_row(self, row):
-        self.wks.append_row(row)
+        self.google_worksheet.append_row(row)
