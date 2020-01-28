@@ -1,0 +1,6 @@
+click
+netifaces
+pick
+oauth2client
+PyOpenSSL
+gspread

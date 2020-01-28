@@ -11,9 +11,31 @@ from collections import OrderedDict
 import netifaces
 import click
 
-from howmanypeoplearearound.oui import load_dictionary, download_oui
-from howmanypeoplearearound.analysis import analyze_file
-from howmanypeoplearearound.colors import *
+from oui import load_dictionary, download_oui
+from analysis import analyze_file
+from colors import *
+from gsheets import GSheet
+
+
+OUI_MISSING = 'Not in OUI'
+
+CELLPHONE = [
+    'Motorola Mobility LLC, a Lenovo Company',
+    'GUANGDONG OPPO MOBILE TELECOMMUNICATIONS CORP.,LTD',
+    'Huawei Symantec Technologies Co.,Ltd.',
+    'Microsoft',
+    'HTC Corporation',
+    'Samsung Electronics Co.,Ltd',
+    'SAMSUNG ELECTRO-MECHANICS(THAILAND)',
+    'BlackBerry RTS',
+    'LG ELECTRONICS INC',
+    'Apple, Inc.',
+    'LG Electronics',
+    'OnePlus Tech (Shenzhen) Ltd',
+    'Xiaomi Communications Co Ltd',
+    'LG Electronics (Mobile Communications)',
+    OUI_MISSING]
+
 
 if os.name != 'nt':
     from pick import pick
@@ -73,26 +95,33 @@ def fileToMacSet(path):
 @click.option('-m', '--manufacturers', default='', help='read list of known manufacturers from file')
 @click.option('--nocorrection', help='do not apply correction', is_flag=True)
 @click.option('--aggbymanufacturer', help='do not store mac addresses in the output file, instead store aggregate count of cellphones by manufacturer.', is_flag=True)
+@click.option('--sheetname', help='name of google sheet to write to.', default='')
+@click.option('--googlecreds', help='if writing to a google sheet, file which contains credentials to write to the sheet.', default='')
 @click.option('--loop', help='loop forever', is_flag=True)
 @click.option('--port', default=8001, help='port to use when serving analysis')
 @click.option('--sort', help='sort cellphone data by distance (rssi)', is_flag=True)
 @click.option('--targetmacs', help='read a file that contains target MAC addresses', default='')
 @click.option('-f', '--pcap', help='read a pcap file instead of capturing')
-def main(adapter, scantime, verbose, dictionary, number, nearby, jsonprint, out, allmacaddresses, manufacturers, nocorrection, aggbymanufacturer, loop, analyze, port, sort, targetmacs, pcap):
+def main(adapter, scantime, verbose, dictionary, number, nearby, jsonprint, out, allmacaddresses, manufacturers, nocorrection, aggbymanufacturer, sheetname, googlecreds, loop, analyze, port, sort, targetmacs, pcap):
     if analyze != '':
         analyze_file(analyze, port)
         return
     if loop:
         while True:
             adapter = scan(adapter, scantime, verbose, dictionary, number,
-                 nearby, jsonprint, out, allmacaddresses, manufacturers, nocorrection, aggbymanufacturer, loop, sort, targetmacs, pcap)
+                 nearby, jsonprint, out, allmacaddresses, manufacturers, nocorrection, aggbymanufacturer, sheetname, googlecreds, loop, sort, targetmacs, pcap)
     else:
         scan(adapter, scantime, verbose, dictionary, number,
-             nearby, jsonprint, out, allmacaddresses, manufacturers, nocorrection, aggbymanufacturer, loop, sort, targetmacs, pcap)
+             nearby, jsonprint, out, allmacaddresses, manufacturers, nocorrection, aggbymanufacturer, sheetname, googlecreds, loop, sort, targetmacs, pcap)
 
 
-def scan(adapter, scantime, verbose, dictionary, number, nearby, jsonprint, out, allmacaddresses, manufacturers, nocorrection, aggbymanufacturer, loop, sort, targetmacs, pcap):
+def scan(adapter, scantime, verbose, dictionary, number, nearby, jsonprint, out, allmacaddresses, manufacturers, nocorrection, aggbymanufacturer, sheetname, googlecreds, loop, sort, targetmacs, pcap):
     """Monitor wifi signals to count the number of people around you"""
+
+    aggregated_by_manufacturer = OrderedDict((company, 0) for company in sorted(CELLPHONE))
+
+    if sheetname:
+        gsheet = GSheet(googlecreds, sheetname, ['Time', *aggregated_by_manufacturer.keys()])
 
     # print("OS: " + os.name)
     # print("Platform: " + platform.system())
@@ -217,31 +246,14 @@ def scan(adapter, scantime, verbose, dictionary, number, nearby, jsonprint, out,
                 print("rssi: %s" % str(foundMacs[mac]))
         sys.stdout.write(RESET)
 
-    OUI_MISSING = 'Not in OUI'
     if manufacturers:
         f = open(manufacturers,'r')
         cellphone = [line.rstrip('\n') for line in f.readlines()]
         f.close()
     else:
-        cellphone = [
-            'Motorola Mobility LLC, a Lenovo Company',
-            'GUANGDONG OPPO MOBILE TELECOMMUNICATIONS CORP.,LTD',
-            'Huawei Symantec Technologies Co.,Ltd.',
-            'Microsoft',
-            'HTC Corporation',
-            'Samsung Electronics Co.,Ltd',
-            'SAMSUNG ELECTRO-MECHANICS(THAILAND)',
-            'BlackBerry RTS',
-            'LG ELECTRONICS INC',
-            'Apple, Inc.',
-            'LG Electronics',
-            'OnePlus Tech (Shenzhen) Ltd',
-            'Xiaomi Communications Co Ltd',
-            'LG Electronics (Mobile Communications)',
-            OUI_MISSING]
+        cellphone = CELLPHONE
 
     cellphone_people = []
-    aggregated_by_manufacturer = OrderedDict((company, 0) for company in sorted(cellphone))
     for mac in foundMacs:
         oui_id = OUI_MISSING
         if mac[:8] in oui:
@@ -280,6 +292,9 @@ def scan(adapter, scantime, verbose, dictionary, number, nearby, jsonprint, out,
     data = cellphone_people
     if aggbymanufacturer:
         data = aggregated_by_manufacturer
+
+    if sheetname:
+        gsheet.append_row([time.time(), *data.values()])
 
     if out:
         with open(out, 'a') as f:
